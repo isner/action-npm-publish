@@ -1,0 +1,60 @@
+name: Publish npm package
+description: Publish npm package
+
+inputs:
+  scope:
+    description: Scope name for the package
+    required: true
+  url:
+    description: URL of the target registry
+    required: true
+  email:
+    description: Email address used to authenticate with the target registry
+    required: true
+  token:
+    description: Token used to authenticate with the target registry
+    required: true
+  canary:
+    description: Package should be published as a canary release
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install jq
+      shell: bash
+      run: sudo apt-get install jq
+
+    - name: Setup node
+      uses: actions/setup-node@v1
+      with:
+        node-version: 14
+
+    - name: Configure npm
+      shell: bash
+      run: |
+        npm config set ${{ inputs.scope }}:registry ${{ inputs.url }}
+        npm config set email ${{ inputs.email }}
+        npm config set _auth ${{ inputs.token }}
+        npm config set always-auth true
+
+    - name: Rewrite canary package.json
+      if: ${{ inputs.canary == 'true' }}
+      shell: bash
+      # if $GITHUB_SHA is not set, this will fail with the following error:
+      # "sed: first RE may not be empty"
+      run: |
+        version=`jq -r .version package.json`
+        data=`sed "s/$version/$version-${GITHUB_SHA:0:8}/g" package.json`
+        echo $data > package.json
+
+    - name: Publish
+      shell: bash
+      run: |
+        if [ ${{ inputs.canary }} = 'true' ]
+        then
+          npm publish --tag=next
+        else
+          npm publish
+        fi
